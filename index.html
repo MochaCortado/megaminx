@@ -116,6 +116,10 @@ input[type=range]:disabled{opacity:.4}
 .stage[data-style="pixel"]{background:#101830}
 .stage[data-style="neon"]{background:#08070d}
 .stage[data-style="watercolor"]{background:#f6f2ea}
+.stage[data-style="starry"]{background:#1b3a7a}
+.stage[data-style="chalk"]{background:#26302c}
+.stage[data-style="xray"]{background:#05070d}
+.stage[data-style="bricks"]{background:#237841}
 .stage[data-style="comic"] .hint,.stage[data-style="watercolor"] .hint{color:#3b352f;text-shadow:none}
 
 @media (max-width:760px){
@@ -395,6 +399,10 @@ const STY={
   pixel:     {...drawn,label:'Pixel'},
   neon:      {...drawn,label:'Neon',pal:'neon'},
   watercolor:{...drawn,label:'Watercolour'},
+  starry:    {...drawn,label:'Starry Night'},
+  chalk:     {...drawn,label:'Chalkboard'},
+  xray:      {...drawn,label:'X-ray',back:true},
+  bricks:    {...drawn,label:'Bricks',geo:true},
 };
 let style='glass';
 function setPalette(list){
@@ -447,6 +455,21 @@ float edgeBg(vec2 px,float r){float c=min(reg(px),1.),e=0.;for(int i=0;i<8;i++){
 float lam(vec2 px){float r=reg(px);if(r<.5)return 1.;float f=floor((r-1.)/11.);vec3 n=vec3(0.,0.,1.);for(int i=0;i<12;i++){if(float(i)==f)n=faceN[i];}
   return clamp(dot(n,normalize(vec3(.35,.6,.72))),0.,1.);}
 `;
+// extra passes: the far side's IDs (X-ray) and each pixel's view-space position (Bricks)
+const idBackMat=idMat.clone();idBackMat.side=THREE.BackSide;
+const geoMat=new THREE.ShaderMaterial({blending:THREE.NoBlending,
+  vertexShader:'varying vec3 vP;void main(){vec4 p=modelViewMatrix*vec4(position,1.);vP=p.xyz;gl_Position=projectionMatrix*p;}',
+  fragmentShader:'varying vec3 vP;void main(){gl_FragColor=vec4(vP,1.);}'});
+const PRE2=`uniform sampler2D geo;uniform sampler2D idsB;uniform float cell;uniform vec3 faceC[12];uniform vec3 faceE1[12];uniform vec3 faceE2[12];
+const vec3 LDIR=vec3(.35,.6,.72);
+vec3 vpos(vec2 px){return texture2D(geo,clamp(px,vec2(.5),res-.5)/res).xyz;}
+float regB(vec2 px){return floor(texture2D(idsB,clamp(px,vec2(.5),res-.5)/res).r*255.+.5);}
+float fidx(float r){return floor((r-1.)/11.);}
+vec3 fN(float r){float f=fidx(r);vec3 n=vec3(0.,0.,1.);for(int i=0;i<12;i++){if(float(i)==f)n=faceN[i];}return n;}
+vec2 fuv(vec2 px,float r){float f=fidx(r);vec3 c=vec3(0.),a=vec3(1.,0.,0.),b=vec3(0.,1.,0.);
+  for(int i=0;i<12;i++){if(float(i)==f){c=faceC[i];a=faceE1[i];b=faceE2[i];}}vec3 p=vpos(px)-c;return vec2(dot(p,a),dot(p,b));}
+float edgeRB(vec2 px,float r){float c=regB(px),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(regB(px+vec2(cos(a),sin(a))*r)-c)));}return e;}
+`;
 const LOOKS={
 // flat colours in three tone bands, Ben-Day dots in shadow, heavy ink, sunburst panel behind
 comic:`void main(){vec2 px=vUv*res;float r=reg(px);
@@ -492,23 +515,78 @@ watercolor:`void main(){vec2 px=vUv*res;
   vec3 o=r<.5?paper:c*paper;
   o=mix(o,vec3(.38,.36,.35),edgeBg(px,.8*dpr)*.28);
   gl_FragColor=vec4(o,1.);}`,
+// Van Gogh: colours smeared along a swirling flow field, parallel brush ridges, swirling night sky
+starry:`vec2 vort(vec2 q,vec2 c,float k){vec2 d=q-c;float l=max(length(d),.02);return vec2(-d.y,d.x)/l*exp(-l*k);}
+vec2 flow(vec2 p){vec2 q=p/res.y;vec2 v=vort(q,vec2(.22,.78),2.2)+vort(q,vec2(.78,.82),2.6)-vort(q,vec2(.5,.62),1.6)*.8+vort(q,vec2(.85,.25),3.)*.7;
+  float a=fbm(q*4.)*6.2832;v+=vec2(cos(a),sin(a))*.35+vec2(.4,0.);return normalize(v);}
+vec3 sky(vec2 p){vec2 q=p/res.y;float best=9.;vec2 bc=vec2(0.);
+  for(int i=0;i<4;i++){vec2 c=i==0?vec2(.22,.78):i==1?vec2(.78,.82):i==2?vec2(.5,.62):vec2(.85,.25);float d=length(q-c);if(d<best){best=d;bc=c;}}
+  vec2 d=q-bc;float sp=sin(atan(d.y,d.x)*2.+log(length(d)+.01)*9.+fbm(q*3.)*2.);
+  vec3 c=mix(vec3(.06,.12,.36),vec3(.2,.38,.78),.5+.5*sp);c=mix(c,vec3(.62,.78,.95),smoothstep(.75,1.,sp)*.7);
+  vec2 g=floor(q*7.);vec2 sc=(g+.25+.5*vec2(hash(g),hash(g+5.)))/7.;float sd=length(q-sc);float star=step(.72,hash(g+2.));
+  c=mix(c,vec3(1.,.9,.45),star*(smoothstep(.022,.012,sd)+.45*smoothstep(.06,.03,sd)*(.5+.5*sin(sd*160.))));
+  return c;}
+void main(){vec2 px=vUv*res;vec2 q=px;vec3 s=vec3(0.);
+  for(int i=0;i<10;i++){q+=flow(q)*2.6*dpr;float rr=reg(q);s+=rr>.5?col(q)*(.5+.65*lam(q)):sky(q);}
+  s/=10.;vec2 f=flow(px),n=vec2(-f.y,f.x);float lane=floor(dot(px,n)/(4.5*dpr));float along=dot(px,f)/(14.*dpr)+hash(vec2(lane,3.))*7.;
+  float seg=floor(along);float stroke=smoothstep(.0,.12,fract(along))*smoothstep(1.,.85,fract(along));
+  float across=fract(dot(px,n)/(4.5*dpr));float body=smoothstep(0.,.25,across)*smoothstep(1.,.75,across);
+  s*=.8+.28*hash(vec2(lane,seg));s*=.78+.3*body*stroke;s+=vec3(.07)*smoothstep(.6,1.,body*stroke)*step(.6,hash(vec2(seg,lane)));
+  s=mix(s,vec3(.05,.09,.26),edgeR(px,1.8*dpr)*.6);
+  gl_FragColor=vec4(clamp((s-.5)*1.15+.52,0.,1.),1.);}`,
+// chalk on slate: dusty hatched fills, broken chalk outlines, eraser smudges
+chalk:`void main(){vec2 px=vUv*res;float r=reg(px);
+  vec3 bg=vec3(.15,.19,.17)*(.9+.2*fbm(px*.003/dpr))+.05*smoothstep(.55,.9,fbm(vec2(px.x*.002,px.y*.02)/dpr));
+  float grain=noise(px*.9/dpr);vec3 o=bg;
+  if(r>.5){vec3 ch=mix(col(px),vec3(1.),.18);float l=lam(px);float ang=hash(vec2(r,7.))*3.1416;vec2 d=vec2(cos(ang),sin(ang)),d2=vec2(-d.y,d.x);
+    float wob=noise(px*.05/dpr)*.6;float h1=smoothstep(.85,.25,abs(fract(dot(px,d)/(5.*dpr)+wob)-.5)*2.);
+    float h2=smoothstep(.8,.3,abs(fract(dot(px,d2)/(5.*dpr)+wob)-.5)*2.)*(1.-smoothstep(.3,.55,l));
+    float cov=clamp(max(h1*(.55+.45*l),h2*.8),0.,1.)*smoothstep(.15,.55,grain+.25*noise(px*.2/dpr));
+    o=mix(bg,ch,cov*.95);}
+  float line=max(edgeR(px,1.3*dpr),edgeBg(px,1.8*dpr))*step(.3,noise(px*.45/dpr))*(.75+.25*grain);
+  o=mix(o,vec3(.95,.95,.92),line*.92);o+=vec3(.25)*step(.996,hash(floor(px/(1.5*dpr))));
+  gl_FragColor=vec4(o,1.);}`,
+// X-ray: see-through, front and back outlines glowing blue-white on black
+xray:`void main(){vec2 px=vUv*res;float r=reg(px),rb=regB(px);vec3 bg=vec3(.015,.025,.05)+.02*fbm(px*.01/dpr);
+  float fe=max(edgeR(px,dpr),edgeBg(px,1.5*dpr)),be=(r>.5||rb>.5)?edgeRB(px,dpr):0.;
+  float glow=max(edgeR(px,3.*dpr),edgeBg(px,4.*dpr))*.25,dens=step(.5,r)*.1+step(.5,rb)*.07+lam(px)*step(.5,r)*.06;
+  vec3 o=bg+vec3(.62,.86,1.)*(dens+fe*.85+be*.4+glow);o+=(hash(px*1.3)-.5)*.03;
+  gl_FragColor=vec4(o,1.);}`,
+// toy bricks: studs on every piece (in the piece's own plane), glossy plastic, green baseplate
+bricks:`void main(){vec2 px=vUv*res;float r=reg(px);
+  if(r<.5){vec2 g=fract(px/(22.*dpr))-.5;float sd=length(g);vec3 o=vec3(.14,.47,.25);
+    o*=1.-.25*smoothstep(.36,.3,sd)*step(0.,g.x-g.y);o+=vec3(.08)*smoothstep(.34,.28,sd)*step(g.x-g.y,0.);gl_FragColor=vec4(o,1.);return;}
+  vec3 o=col(px)*(.6+.5*lam(px));vec2 g=fract(fuv(px,r)/cell)-.5;float sd=length(g);
+  float stud=1.-smoothstep(.29,.32,sd),ring=smoothstep(.3,.33,sd)*(1.-smoothstep(.33,.4,sd)),side=dot(normalize(g+1e-4),normalize(vec2(-.7,.7)));
+  o*=1.+.18*stud*side-.3*ring*max(-side,0.);vec3 n=fN(r),V=normalize(-vpos(px));
+  o+=vec3(pow(max(dot(reflect(-normalize(LDIR),n),V),0.),30.)*.35);
+  gl_FragColor=vec4(mix(o,o*.35,edgeR(px,.9*dpr)),1.);}`,
 };
 const postMats={};
-for(const k in LOOKS)postMats[k]=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,fragmentShader:PRE+LOOKS[k],
+for(const k in LOOKS)postMats[k]=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,fragmentShader:PRE+PRE2+LOOKS[k],
   vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
-  uniforms:{tex:{value:null},ids:{value:null},res:{value:new THREE.Vector2(1,1)},dpr:{value:1},faceN:{value:Array.from({length:12},()=>new THREE.Vector3())}}});
+  uniforms:{tex:{value:null},ids:{value:null},res:{value:new THREE.Vector2(1,1)},dpr:{value:1},faceN:{value:Array.from({length:12},()=>new THREE.Vector3())},
+    geo:{value:null},idsB:{value:null},cell:{value:.1},faceC:{value:Array.from({length:12},()=>new THREE.Vector3())},faceE1:{value:Array.from({length:12},()=>new THREE.Vector3())},faceE2:{value:Array.from({length:12},()=>new THREE.Vector3())}}});
 const postScene=new THREE.Scene(),postCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1),postQuad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),postMats.comic);postScene.add(postQuad);
-let rtCol=null,rtId=null;const dbs=new THREE.Vector2();
+let rtCol=null,rtId=null,rtIdB=null,rtGeo=null;const dbs=new THREE.Vector2();
 function target(t,ms){if(t&&t.width===dbs.x&&t.height===dbs.y)return t;if(t)t.dispose();
   const n=ms&&renderer.capabilities.isWebGL2?new THREE.WebGLMultisampleRenderTarget(dbs.x,dbs.y):new THREE.WebGLRenderTarget(dbs.x,dbs.y,ms?{}:{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
   if(ms)n.texture.encoding=THREE.sRGBEncoding;return n;}
+function floatTarget(t){if(t&&t.width===dbs.x&&t.height===dbs.y)return t;if(t)t.dispose();
+  return new THREE.WebGLRenderTarget(dbs.x,dbs.y,{type:THREE.HalfFloatType,minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});}
 function draw(scene,cam){
   if(!STY[style].post){renderer.render(scene,cam);return;}
   renderer.getDrawingBufferSize(dbs);rtCol=target(rtCol,true);rtId=target(rtId,false);
   renderer.setRenderTarget(rtCol);renderer.clear();renderer.render(scene,cam);
-  scene.overrideMaterial=idMat;renderer.setRenderTarget(rtId);renderer.clear();renderer.render(scene,cam);scene.overrideMaterial=null;
-  const pm=postMats[style],u=pm.uniforms;
-  u.faceN.value.forEach((v,f)=>{if(scene===sceneN)v.set(0,0,1);else v.set(...FACES[f].n).transformDirection(cam.matrixWorldInverse);});
+  scene.overrideMaterial=idMat;renderer.setRenderTarget(rtId);renderer.clear();renderer.render(scene,cam);
+  const S=STY[style],pm=postMats[style],u=pm.uniforms,W=cam.matrixWorldInverse;
+  if(S.back){rtIdB=target(rtIdB,false);scene.overrideMaterial=idBackMat;renderer.setRenderTarget(rtIdB);renderer.clear();renderer.render(scene,cam);u.idsB.value=rtIdB.texture;}
+  if(S.geo){rtGeo=floatTarget(rtGeo);scene.overrideMaterial=geoMat;renderer.setRenderTarget(rtGeo);renderer.clear();renderer.render(scene,cam);u.geo.value=rtGeo.texture;
+    FACES.forEach((F,f)=>{if(scene===sceneN){u.faceC.value[f].set(0,0,0);u.faceE1.value[f].set(1,0,0);u.faceE2.value[f].set(0,1,0);return;}
+      const e1=norm(sub(F.P[0],F.C));u.faceC.value[f].set(...F.C).applyMatrix4(W);u.faceE1.value[f].set(...e1).transformDirection(W);u.faceE2.value[f].set(...cross(F.n,e1)).transformDirection(W);});
+    u.cell.value=cur&&cur.m?Math.max((2/PHI)*(.46-.13/cur.m)/cur.m*.5,.055):.12;}
+  scene.overrideMaterial=null;
+  u.faceN.value.forEach((v,f)=>{if(scene===sceneN)v.set(0,0,1);else v.set(...FACES[f].n).transformDirection(W);});
   u.tex.value=rtCol.texture;u.ids.value=rtId.texture;u.res.value.copy(dbs);u.dpr.value=renderer.getPixelRatio();
   renderer.setRenderTarget(null);postQuad.material=pm;renderer.render(postScene,postCam);
 }
