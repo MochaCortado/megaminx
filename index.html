@@ -110,6 +110,17 @@ input[type=range]:disabled{opacity:.4}
 .state.busy i{background:#b9a6ff;box-shadow:0 0 10px #b9a6ff;animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.35}}
 
+/* per-style stage backgrounds (the drawn looks paint their own; these only show before the first frame) */
+.stage[data-style]:not([data-style="glass"])::before{display:none}
+.stage[data-style="plastic"]{background:radial-gradient(70% 60% at 42% 45%,#2b2c31 0%,#141518 60%,#0a0a0c 100%)}
+.stage[data-style="comic"]{background:#ffd54d}
+.stage[data-style="pixel"]{background:#101830}
+.stage[data-style="blueprint"]{background:#1a4585}
+.stage[data-style="ukiyoe"]{background:linear-gradient(#2c4878,#efe3c8 55%)}
+.stage[data-style="neon"]{background:#08070d}
+.stage[data-style="watercolor"]{background:#f6f2ea}
+.stage[data-style="comic"] .hint,.stage[data-style="ukiyoe"] .hint,.stage[data-style="watercolor"] .hint{color:#3b352f;text-shadow:none}
+
 @media (max-width:760px){
   .app{height:auto;min-height:100%;overflow:visible;display:flex;flex-direction:column}
   .stage{position:relative;height:62vh;flex:none}
@@ -157,6 +168,11 @@ input[type=range]:disabled{opacity:.4}
     <div class="field" role="group" aria-labelledby="ordLabel">
       <span class="name" id="ordLabel">Order <em id="ordName"></em></span>
       <div class="orders" id="orders"></div>
+    </div>
+
+    <div class="field" role="group" aria-labelledby="styleLabel">
+      <span class="name" id="styleLabel">Style</span>
+      <div class="toggles" id="styles"></div>
     </div>
 
     <div class="actions">
@@ -311,13 +327,13 @@ function makeMeshes(p){
     for(let k=0;k<pt.length;k++){const o=(v0+k)*3,v=[cx+(pt[k][0]-cx)*shrink,cy+(pt[k][1]-cy)*shrink,cz+(pt[k][2]-cz)*shrink];
       pos[o]=v[0];pos[o+1]=v[1];pos[o+2]=v[2];const q=NET.map(f,v);npos[o]=q[0];npos[o+1]=q[1];npos[o+2]=0;}
     for(let k=1;k<pt.length-1;k++){triF[ii/3]=i;idx[ii++]=v0;idx[ii++]=v0+k;idx[ii++]=v0+k+1;}}
-  p.pts=null;p.vStart=vStart;p.base=pos.slice();p.triF=triF;
+  p.pts=null;p.vStart=vStart;p.base=pos.slice();p.triF=triF;p.shrink=shrink;
   const index=new THREE.BufferAttribute(idx,1);
   p.posA=new THREE.BufferAttribute(pos,3);p.posA.setUsage(THREE.DynamicDrawUsage);
   p.colA=new THREE.BufferAttribute(new Uint8Array(V*3),3,true);p.colA.setUsage(THREE.DynamicDrawUsage);
   const geo=new THREE.BufferGeometry();geo.setAttribute('position',p.posA);geo.setAttribute('color',p.colA);geo.setIndex(index);
   const ng=new THREE.BufferGeometry();ng.setAttribute('position',new THREE.BufferAttribute(npos,3));ng.setAttribute('color',p.colA);ng.setIndex(index);
-  p.front=new THREE.Mesh(geo,frontMat);const back=new THREE.Mesh(geo,backMat);p.net=new THREE.Mesh(ng,netMat);
+  p.front=new THREE.Mesh(geo,STY[style].mat);const back=new THREE.Mesh(geo,backMat);p.net=new THREE.Mesh(ng,netMat);
   p.front.frustumCulled=back.frustumCulled=p.net.frustumCulled=false;
   p.group=new THREE.Group();p.group.add(back);p.group.add(p.front);
   ng.computeBoundingBox();p.netBox=ng.boundingBox;
@@ -363,6 +379,190 @@ function fitNet(force){if(!cur)return;const {w,h,shift,aw}=openArea(),b=cur.netB
   if(force||!netFitted){camN.zoom=1;camN.position.set(0,0,5);ctlN.target.set(0,0,0);netFitted=true;}camN.updateProjectionMatrix();}
 new ResizeObserver(resize).observe(stage);
 
+/* ---------- art styles ----------
+   Stained glass and Real puzzle are lit 3D materials. The drawn looks render flat palette colours plus an ID pass
+   (which face region and which facelet covers each pixel); a full-screen shader then draws the look, with outlines
+   where the IDs change and shading from each face's normal. Regions are a face's centre, five corner patches and
+   five edge wedges, so on big puzzles the outlines trace the star itself. */
+const PALS={
+  base:PAL,
+  comic:['#ffffff','#ffd400','#e8202a','#00a650','#0072bc','#7f3f98','#f7941d','#8dc63f','#ec008c','#00aeef','#fff0b0','#9a9a9a'],
+  ukiyoe:['#efe4cc','#d9a441','#c8412e','#4f7a5a','#2b4a78','#7d6b9e','#e07b39','#9aa35b','#e8a7a7','#8fb3c9','#c9b38a','#6b7280'],
+  neon:['#ffffff','#ffe600','#ff2a6d','#05ffa1','#2d7dff','#b967ff','#ff9a00','#c6ff00','#ff4fd8','#01cdfe','#fffbdb','#8a8fa8'],
+};
+const plasticMat=new THREE.MeshPhysicalMaterial({vertexColors:true,flatShading:true,roughness:.42,metalness:0,clearcoat:1,clearcoatRoughness:.16});
+const flatMat=new THREE.MeshBasicMaterial({vertexColors:true,toneMapped:false});
+// gap: 'scale' = the original look (pieces shrunk about their centres); a number = an even sticker gap on every side,
+// as a fraction of one layer's thickness
+const drawn={mat:flatMat,gap:0,body:null,post:true};
+const STY={
+  glass:     {label:'Stained glass',mat:frontMat,gap:'scale',body:null,lead:true,back:true,env:false,exposure:1.05,neutral:false},
+  plastic:   {label:'Real puzzle',mat:plasticMat,gap:.09,body:0x0b0b0d,env:true,exposure:1,neutral:true},
+  comic:     {...drawn,label:'Comic',pal:'comic'},
+  pixel:     {...drawn,label:'Pixel'},
+  blueprint: {...drawn,label:'Blueprint'},
+  ukiyoe:    {...drawn,label:'Ukiyo-e',pal:'ukiyoe'},
+  neon:      {...drawn,label:'Neon',pal:'neon'},
+  watercolor:{...drawn,label:'Watercolour'},
+};
+let style='glass',studio=null;
+// a small studio room baked to an environment map, for the glossy stickers
+function makeStudio(){
+  const s=new THREE.Scene(),box=new THREE.BoxGeometry(1,1,1);
+  s.add(new THREE.Mesh(new THREE.BoxGeometry(12,8,12),new THREE.MeshBasicMaterial({color:0x101013,side:THREE.BackSide})));
+  const panel=(k,sx,sy,sz,x,y,z)=>{const m=new THREE.Mesh(box,new THREE.MeshBasicMaterial({color:new THREE.Color(0xffffff).multiplyScalar(k)}));m.scale.set(sx,sy,sz);m.position.set(x,y,z);s.add(m);};
+  panel(14,2,.1,1.2,0,3.9,0);panel(9,.1,1.4,3,-5.9,.5,0);panel(6,.1,1.4,3,5.9,.5,0);panel(5,3,1,.1,0,0,-5.9);
+  const pm=new THREE.PMREMGenerator(renderer),t=pm.fromScene(s,.03).texture;pm.dispose();return t;
+}
+// black plastic body just under the surface, so sticker gaps show plastic instead of the far side
+const bodyMat=new THREE.MeshStandardMaterial({color:0,roughness:.3,metalness:0});
+const body=(()=>{const pts=[];FACES.forEach(F=>{const P=F.P.map(v=>mul(v,.997));for(let i=1;i<4;i++)pts.push(...P[0],...P[i],...P[i+1]);});
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));g.computeVertexNormals();const m=new THREE.Mesh(g,bodyMat);m.visible=false;root.add(m);return m;})();
+const hemi=scene3.children.find(o=>o.isHemisphereLight),warmHemi=hemi.color.clone(),warmKey=keyL.color.clone(),white=new THREE.Color(0xffffff);
+function setPalette(list){
+  list.forEach((h,i)=>{const c=new THREE.Color(h);c.convertSRGBToLinear();pal8[i]=[Math.round(c.r*255),Math.round(c.g*255),Math.round(c.b*255)];});
+  Object.values(cache).forEach(writeColors);
+}
+function setGap(p,gap){
+  if(p.gapNow===gap||(p.gapNow===undefined&&gap==='scale')){p.gapNow=gap;return;}
+  const vs=p.vStart,c=p.cen,B=p.base,NP=p.net.geometry.attributes.position.array;
+  if(!p.orig){p.orig=new Float32Array(B.length);for(let i=0;i<p.F;i++)for(let v=vs[i];v<vs[i+1];v++)for(let q=0;q<3;q++)p.orig[v*3+q]=c[i*3+q]+(B[v*3+q]-c[i*3+q])/p.shrink;}
+  const O=p.orig,del=p.m?(2/PHI)*(.46-.13/p.m)/p.m:.3;
+  for(let i=0;i<p.F;i++){const a=vs[i],k=vs[i+1]-a,n=FACES[p.face[i]].n;
+    if(gap==='scale'){for(let v=a;v<a+k;v++)for(let q=0;q<3;q++)B[v*3+q]=c[i*3+q]+(O[v*3+q]-c[i*3+q])*p.shrink;}
+    else if(gap===0){for(let v=a*3;v<(a+k)*3;v++)B[v]=O[v];}
+    else{const d=gap*del,P=[];for(let v=0;v<k;v++)P.push([O[(a+v)*3],O[(a+v)*3+1],O[(a+v)*3+2]]);
+      for(let v=0;v<k;v++){const p0=P[(v+k-1)%k],p1=P[v],p2=P[(v+1)%k],u1=norm(cross(n,sub(p1,p0))),u2=norm(cross(n,sub(p2,p1))),s=d/(1+dot(u1,u2));
+        B[(a+v)*3]=p1[0]+(u1[0]+u2[0])*s;B[(a+v)*3+1]=p1[1]+(u1[1]+u2[1])*s;B[(a+v)*3+2]=p1[2]+(u1[2]+u2[2])*s;}}
+    for(let v=a;v<a+k;v++){const m=NET.map(p.face[i],[B[v*3],B[v*3+1],B[v*3+2]]);NP[v*3]=m[0];NP[v*3+1]=m[1];}}
+  p.posA.array.set(B);p.posA.needsUpdate=true;p.net.geometry.attributes.position.needsUpdate=true;p.gapNow=gap;
+}
+// per facelet: its index, and its region: face x (centre, 5 corner patches, 5 edge wedges)
+function idAttrs(p){
+  const g=p.front.geometry;if(g.attributes.fid)return;
+  const V=p.vStart[p.F],fid=new Float32Array(V),reg=new Float32Array(V),m=p.m,pf=perFace(p.N),blk=m*m+m;
+  for(let i=0;i<p.F;i++){const f=p.face[i],k=i-f*pf;let z=0;
+    if(m>0&&k!==pf-1){const b=Math.floor(k/blk),w=k%blk;z=w<m*m?1+b:6+b;}
+    for(let v=p.vStart[i];v<p.vStart[i+1];v++){fid[v]=i;reg[v]=f*11+z+1;}}
+  const A=new THREE.BufferAttribute(fid,1),R=new THREE.BufferAttribute(reg,1);
+  g.setAttribute('fid',A);g.setAttribute('region',R);p.net.geometry.setAttribute('fid',A);p.net.geometry.setAttribute('region',R);
+}
+function styleMesh(p){const S=STY[style];p.front.material=S.mat;p.group.children[0].visible=!!S.back;setGap(p,S.gap);if(S.post)idAttrs(p);}
+function applyStyle(name,save){
+  if(!STY[name])name='glass';finishAnim();style=name;const S=STY[name];
+  stage.dataset.style=name;lead3.visible=!!S.lead;
+  body.visible=S.body!==null;if(S.body!==null)bodyMat.color.setHex(S.body);
+  hemi.color.copy(S.neutral?white:warmHemi);keyL.color.copy(S.neutral?white:warmKey);
+  if(S.env&&!studio)studio=makeStudio();scene3.environment=S.env?studio:null;
+  renderer.toneMappingExposure=S.exposure||1;
+  renderer.setPixelRatio(Math.min(S.post?1.5:2,window.devicePixelRatio||1));resize();
+  setPalette(PALS[S.pal||'base']);Object.values(cache).forEach(styleMesh);
+  if(cur)drawRose();
+  document.querySelectorAll('#styles button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.style===name)));
+  if(save)try{localStorage.setItem('megaminx-style',name);}catch(e){}
+}
+const idMat=new THREE.ShaderMaterial({blending:THREE.NoBlending,
+  vertexShader:'attribute float fid;attribute float region;varying float vF;varying float vR;void main(){vF=fid;vR=region;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+  fragmentShader:'varying float vF;varying float vR;void main(){float f=floor(vF+.5)+1.;gl_FragColor=vec4(floor(vR+.5)/255.,mod(f,256.)/255.,mod(floor(f/256.),256.)/255.,floor(f/65536.)/255.);}'});
+const PRE=`uniform sampler2D tex;uniform sampler2D ids;uniform vec2 res;uniform float dpr;uniform vec3 faceN[12];varying vec2 vUv;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*noise(p);p*=2.03;a*=.5;}return s;}
+vec4 idAt(vec2 px){return texture2D(ids,clamp(px,vec2(.5),res-.5)/res);}
+float reg(vec2 px){return floor(idAt(px).r*255.+.5);}
+float fac(vec2 px){vec4 t=idAt(px);return floor(t.g*255.+.5)+256.*floor(t.b*255.+.5)+65536.*floor(t.a*255.+.5);}
+vec3 col(vec2 px){vec4 t=texture2D(tex,clamp(px,vec2(.5),res-.5)/res);return t.a>.004?t.rgb/t.a:vec3(0.);}
+float edgeR(vec2 px,float r){float c=reg(px),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(reg(px+vec2(cos(a),sin(a))*r)-c)));}return e;}
+float edgeBg(vec2 px,float r){float c=min(reg(px),1.),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(min(reg(px+vec2(cos(a),sin(a))*r),1.)-c)));}return e;}
+float edgeF(vec2 px){float c=fac(px);return min(1.,step(.5,abs(fac(px+vec2(1.,0.))-c))+step(.5,abs(fac(px+vec2(0.,1.))-c)));}
+float lam(vec2 px){float r=reg(px);if(r<.5)return 1.;float f=floor((r-1.)/11.);vec3 n=vec3(0.,0.,1.);for(int i=0;i<12;i++){if(float(i)==f)n=faceN[i];}
+  return clamp(dot(n,normalize(vec3(.35,.6,.72))),0.,1.);}
+`;
+const LOOKS={
+// flat colours in three tone bands, Ben-Day dots in shadow, heavy ink, sunburst panel behind
+comic:`void main(){vec2 px=vUv*res;float r=reg(px);
+  vec2 q=px-res*.5;float ray=step(.5,fract(atan(q.y,q.x)*3.8197));
+  vec3 bg=mix(vec3(1.,.85,.3),vec3(1.,.75,.2),ray);
+  vec2 g=fract(px/(7.*dpr))-.5;bg=mix(bg,vec3(.96,.5,.17),(1.-smoothstep(.17,.24,length(g)))*.6*smoothstep(.15,.7,length(q)/max(res.x,res.y)));
+  vec3 c=col(px);float l=lam(px);float band=l>.62?1.:(l>.3?.8:.6);vec3 o=c*band;
+  vec2 g2=fract(mat2(.707,-.707,.707,.707)*px/(5.5*dpr))-.5;o=mix(o,o*.5,(1.-smoothstep(.16,.23,length(g2)))*step(band,.9));
+  o=mix(o,vec3(1.),step(.93,l)*.25);
+  float ink=max(edgeR(px,1.7*dpr),edgeBg(px,3.4*dpr));
+  gl_FragColor=vec4(mix(r<.5?bg:o,vec3(.07,.05,.09),ink),1.);}`,
+// chunky pixels, PICO-8 palette, ordered dither, 1-pixel outlines, starfield
+pixel:`vec3 pal(int i){if(i==0)return vec3(0.);if(i==1)return vec3(.114,.169,.325);if(i==2)return vec3(.494,.145,.325);if(i==3)return vec3(0.,.529,.318);
+  if(i==4)return vec3(.671,.322,.212);if(i==5)return vec3(.373,.341,.31);if(i==6)return vec3(.761,.765,.78);if(i==7)return vec3(1.,.945,.91);
+  if(i==8)return vec3(1.,0.,.302);if(i==9)return vec3(1.,.639,0.);if(i==10)return vec3(1.,.925,.153);if(i==11)return vec3(0.,.894,.212);
+  if(i==12)return vec3(.161,.678,1.);if(i==13)return vec3(.514,.463,.612);if(i==14)return vec3(1.,.467,.659);return vec3(1.,.8,.667);}
+vec3 nearest(vec3 c){vec3 b=pal(0);float d=9.;for(int i=0;i<16;i++){vec3 p=pal(i);float e=dot(c-p,c-p);if(e<d){d=e;b=p;}}return b;}
+float b2(vec2 a){a=floor(a);return fract(a.x/2.+a.y*a.y*.75);}
+void main(){vec2 px=vUv*res;float S=floor(6.*dpr);vec2 cell=floor(px/S);vec2 cp=(cell+.5)*S;float r=reg(cp);
+  vec3 bg=vec3(.114,.169,.325)*.55;float h=hash(cell);if(h>.988)bg=h>.996?vec3(1.,.945,.91):vec3(.161,.678,1.)*.8;
+  vec3 c=col(cp)*(.42+.7*lam(cp));c+=(b2(.5*cell)*.25+b2(cell)-.5)*.2;c=nearest(c);
+  float o=0.;if(r>.5){o=max(max(step(.5,abs(reg(cp+vec2(S,0.))-r)),step(.5,abs(reg(cp-vec2(S,0.))-r))),max(step(.5,abs(reg(cp+vec2(0.,S))-r)),step(.5,abs(reg(cp-vec2(0.,S))-r))));}
+  float sil=r>.5?max(max(step(reg(cp+vec2(S,0.)),.5),step(reg(cp-vec2(S,0.)),.5)),max(step(reg(cp+vec2(0.,S)),.5),step(reg(cp-vec2(0.,S)),.5))):0.;
+  vec3 o3=r<.5?bg:mix(c,vec3(.114,.169,.325),o*.85);o3=mix(o3,vec3(0.),sil);
+  gl_FragColor=vec4(o3,1.);}`,
+// drafting blue, grid, white linework; the star shows as line density, shadow faces hatched
+blueprint:`void main(){vec2 px=vUv*res;float r=reg(px);
+  vec3 bg=vec3(.1,.27,.52)*(.93+.1*fbm(px*.01/dpr))+.02*hash(floor(px));
+  vec2 gm=abs(fract(px/(22.*dpr)+.5)-.5)*22.*dpr,gM=abs(fract(px/(110.*dpr)+.5)-.5)*110.*dpr;
+  bg=mix(bg,vec3(.75,.85,1.),.1*(1.-smoothstep(.5,1.2,min(gm.x,gm.y)))+.18*(1.-smoothstep(.6,1.6,min(gM.x,gM.y))));
+  float l=lam(px);vec3 o=bg+vec3(.05,.07,.09)*l;
+  float hatch=(1.-step(.42,l))*(1.-smoothstep(.6,1.4,abs(fract((px.x+px.y)/(7.*dpr))-.5)*7.*dpr))*.35;
+  float line=r>.5?max(max(edgeR(px,1.1*dpr)*.95,edgeF(px)*.42),hatch):0.;line=max(line,edgeBg(px,1.9*dpr));
+  gl_FragColor=vec4(mix(r<.5?bg:o,vec3(.93,.96,1.),line),1.);}`,
+// flat traditional colours, two tones, sumi outline with a wobble, wood grain, bokashi sky
+ukiyoe:`void main(){vec2 px=vUv*res;float r=reg(px);
+  float grain=.5+.5*sin(px.y*.13/dpr+fbm(px*vec2(.004,.05)/dpr)*9.);
+  vec3 cream=vec3(.94,.89,.79),prus=vec3(.17,.28,.47);
+  vec3 bg=mix(cream,prus,smoothstep(.5,1.05,vUv.y));bg=mix(bg,vec3(.85,.62,.42),.35*smoothstep(.25,0.,vUv.y));bg*=.95+.05*grain;
+  vec3 c=col(px+vec2(1.6,-1.1)*dpr);float l=lam(px);c=mix(c*vec3(.74,.77,.9),c,step(.42,l));c*=.94+.06*grain;
+  vec2 w=px+(vec2(noise(px*.04/dpr),noise(px*.04/dpr+7.))-.5)*3.*dpr;
+  float ink=max(edgeR(w,1.3*dpr),edgeBg(w,2.4*dpr))*(.82+.18*noise(px*.6/dpr));
+  vec3 o=mix(r<.5?bg:c,vec3(.11,.1,.09),ink);o*=.97+.03*hash(floor(px));
+  gl_FragColor=vec4(o,1.);}`,
+// glowing tubes along the outlines in each piece's colour, dark wall
+neon:`void main(){vec2 px=vUv*res;float c0=reg(px);float d=99.;vec2 hit=px;
+  for(int k=1;k<=12;k++){float rr=float(k)*1.5*dpr;for(int i=0;i<10;i++){float a=float(i)*.6283+float(k)*.37;vec2 s=px+vec2(cos(a),sin(a))*rr;if(d>90.&&abs(reg(s)-c0)>.5){d=rr;hit=s;}}}
+  vec3 own=c0>.5?col(px):col(hit);
+  float core=1.-smoothstep(.9*dpr,2.*dpr,d);float glow=exp(-d/(5.5*dpr));
+  vec3 bg=vec3(.035,.03,.055)*(1.-.5*length(vUv-.5))+.012*fbm(px*.02/dpr);
+  vec3 o=bg+own*.07*step(.5,c0)+own*glow*1.15+mix(own,vec3(1.),.65)*core;
+  gl_FragColor=vec4(o,1.);}`,
+// wobbly washes on cold-press paper, pigment pooling at the edges, granulation, pencil underdrawing
+watercolor:`void main(){vec2 px=vUv*res;
+  vec2 w=px+(vec2(fbm(px*.007/dpr),fbm(px*.007/dpr+5.2))-.5)*24.*dpr;float r=reg(w);
+  vec3 paper=vec3(.965,.95,.92)*(.95+.06*fbm(px*.35/dpr));
+  float k=3.*dpr;vec3 c=(col(w)*2.+col(w+vec2(k,0.))+col(w-vec2(k,0.))+col(w+vec2(0.,k))+col(w-vec2(0.,k)))/6.;
+  float l=lam(w);c=mix(c,c*vec3(.68,.74,.92),1.-smoothstep(.25,.65,l));
+  c=mix(c,vec3(1.),.22+.25*fbm(px*.005/dpr+1.7));
+  c=mix(vec3(1.),c,clamp(.8+.4*fbm(px*.25/dpr),0.,1.));
+  float ring=max(edgeR(w,1.8*dpr),edgeR(w,3.6*dpr)*.55);c=mix(c,c*c*.9,ring*.75);
+  vec3 o=r<.5?paper:c*paper;
+  o=mix(o,vec3(.38,.36,.35),edgeBg(px,.8*dpr)*.28);
+  gl_FragColor=vec4(o,1.);}`,
+};
+const postMats={};
+for(const k in LOOKS)postMats[k]=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,fragmentShader:PRE+LOOKS[k],
+  vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
+  uniforms:{tex:{value:null},ids:{value:null},res:{value:new THREE.Vector2(1,1)},dpr:{value:1},faceN:{value:Array.from({length:12},()=>new THREE.Vector3())}}});
+const postScene=new THREE.Scene(),postCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1),postQuad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),postMats.comic);postScene.add(postQuad);
+let rtCol=null,rtId=null;const dbs=new THREE.Vector2();
+function target(t,ms){if(t&&t.width===dbs.x&&t.height===dbs.y)return t;if(t)t.dispose();
+  const n=ms&&renderer.capabilities.isWebGL2?new THREE.WebGLMultisampleRenderTarget(dbs.x,dbs.y):new THREE.WebGLRenderTarget(dbs.x,dbs.y,ms?{}:{minFilter:THREE.NearestFilter,magFilter:THREE.NearestFilter});
+  if(ms)n.texture.encoding=THREE.sRGBEncoding;return n;}
+function draw(scene,cam){
+  if(!STY[style].post){renderer.render(scene,cam);return;}
+  renderer.getDrawingBufferSize(dbs);rtCol=target(rtCol,true);rtId=target(rtId,false);
+  renderer.setRenderTarget(rtCol);renderer.clear();renderer.render(scene,cam);
+  scene.overrideMaterial=idMat;renderer.setRenderTarget(rtId);renderer.clear();renderer.render(scene,cam);scene.overrideMaterial=null;
+  const pm=postMats[style],u=pm.uniforms;
+  u.faceN.value.forEach((v,f)=>{if(scene===sceneN)v.set(0,0,1);else v.set(...FACES[f].n).transformDirection(cam.matrixWorldInverse);});
+  u.tex.value=rtCol.texture;u.ids.value=rtId.texture;u.res.value.copy(dbs);u.dpr.value=renderer.getPixelRatio();
+  renderer.setRenderTarget(null);postQuad.material=pm;renderer.render(postScene,postCam);
+}
+
 /* ---------- state ---------- */
 const cache={};let cur=null,view='3d',log=[],anim=null,runner=null,dir=1;
 const fmt=n=>n.toLocaleString('en-US');
@@ -373,7 +573,7 @@ async function getPuzzle(N){
   if(cache[N])return cache[N];
   document.getElementById('loadingN').textContent=`${fmt(12*perFace(N))} pieces of glass`;loadingEl.hidden=false;
   await new Promise(r=>setTimeout(r,40));
-  const p=buildMega(N,true);makeMeshes(p);cache[N]=p;loadingEl.hidden=true;return p;}
+  const p=buildMega(N,true);makeMeshes(p);styleMesh(p);cache[N]=p;loadingEl.hidden=true;return p;}
 function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
 let seed=Date.now()%100000;
 const scrambleCount=p=>Math.min(3600,60+48*p.m);
@@ -401,7 +601,7 @@ function turn(j,d){
   else{applyMove(cur,j,k,d);writeColors(cur);}
   ui();
 }
-function finishAnim(){if(!anim)return;const {mv}=anim;restPose(cur,mv.j,mv.k);applyMove(cur,mv.j,mv.k,mv.dir);writeColors(cur);anim=null;lead3.visible=true;}
+function finishAnim(){if(!anim)return;const {mv}=anim;restPose(cur,mv.j,mv.k);applyMove(cur,mv.j,mv.k,mv.dir);writeColors(cur);anim=null;lead3.visible=!!STY[style].lead;}
 
 /* ---------- progressive scramble / unscramble ---------- */
 function startRunner(type,frames=150){
@@ -440,13 +640,13 @@ function drawRose(){
   const R=s/(2*Math.sin(Math.PI/5)),P=[...Array(5)].map((_,i)=>{const a=-Math.PI/2+i*2*Math.PI/5;return [R*Math.cos(a),R*Math.sin(a)];});
   const u=[],g=[];for(let i=0;i<5;i++){const a=P[i],b=P[(i+1)%5],ex=b[0]-a[0],ey=b[1]-a[1],l=Math.hypot(ex,ey);let n=[-ey/l,ex/l];if(n[0]*(-a[0])+n[1]*(-a[1])<0)n=[-n[0],-n[1]];u.push(n);g.push(-(a[0]*n[0]+a[1]*n[1]));}
   const X=(i,d1,j,d2)=>{i=(i+5)%5;j=(j+5)%5;const a11=u[i][0],a12=u[i][1],a21=u[j][0],a22=u[j][1],b1=d1-g[i],b2=d2-g[j],det=a11*a22-a12*a21;return [(b1*a22-a12*b2)/det,(a11*b2-a21*b1)/det];};
-  const r=rng(7+m),pick=()=>PAL[(r()*12)|0],poly=(pts,fill,zone)=>`<polygon data-z="${zone}" points="${pts.map(p=>p[0].toFixed(4)+','+p[1].toFixed(4)).join(' ')}" fill="${fill}"/>`;
+  const r=rng(7+m),RP=PALS[STY[style].pal||'base'],pick=()=>RP[(r()*12)|0],poly=(pts,fill,zone)=>`<polygon data-z="${zone}" points="${pts.map(p=>p[0].toFixed(4)+','+p[1].toFixed(4)).join(' ')}" fill="${fill}"/>`;
   let h='';
   for(let i=0;i<5;i++){
     for(let a=0;a<md;a++)for(let b=0;b<md;b++)h+=poly([X(i-1,a*del,i,b*del),X(i-1,a*del,i,(b+1)*del),X(i-1,(a+1)*del,i,(b+1)*del),X(i-1,(a+1)*del,i,b*del)],pick(),'corner');
     for(let a=0;a<md;a++)h+=poly([X(i,a*del,i-1,D),X(i,(a+1)*del,i-1,D),X(i,(a+1)*del,i+1,D),X(i,a*del,i+1,D)],pick(),'edge');
   }
-  h+=poly([0,1,2,3,4].map(i=>X(i-1,D,i,D)),PAL[0],'center');
+  h+=poly([0,1,2,3,4].map(i=>X(i-1,D,i,D)),RP[0],'center');
   roseEl.innerHTML=`<g stroke="#04050b" stroke-width="${md>3?.012:.02}" stroke-linejoin="round">${h}</g><polygon points="${P.map(p=>p.join(',')).join(' ')}" fill="none" stroke="#d9b45a" stroke-opacity=".55" stroke-width=".02"/>`;
   document.getElementById('ze').textContent=`5 × ${m}`;document.getElementById('zk').textContent=`5 × ${m}²`;
 }
@@ -495,12 +695,18 @@ function frame(now){
   if(anim){const x=(now-anim.t0)/anim.dur;if(x>=1)finishAnim();else setTurnPose(cur,anim.mv.j,anim.mv.k,anim.mv.dir*2*Math.PI/5*easeIO(x));}
   stepRunner();
   if(fly){const x=Math.min(1,(now-fly.t0)/800),e=easeIO(x);cam3.position.copy(fly.from).lerp(fly.to,e);if(x>=1)fly=null;}
-  if(view==='3d'){ctl3.update();renderer.render(scene3,cam3);}else{ctlN.update();renderer.render(sceneN,camN);}
+  if(view==='3d'){ctl3.update();draw(scene3,cam3);}else{ctlN.update();draw(sceneN,camN);}
   requestAnimationFrame(frame);}
 
 try{await Promise.race([document.fonts.ready,new Promise(r=>setTimeout(r,1500))]);}catch(e){}
 resize();
 // opening moment: the solved puzzle scrambles itself into stars
+// style switch; the choice is remembered
+const stylesEl=document.getElementById('styles');
+stylesEl.innerHTML=Object.keys(STY).map(k=>`<button type="button" class="chip" data-style="${k}" aria-pressed="false">${STY[k].label}</button>`).join('');
+stylesEl.addEventListener('click',e=>{const b=e.target.closest('button[data-style]');if(b)applyStyle(b.dataset.style,true);});
+let savedStyle='glass';try{savedStyle=localStorage.getItem('megaminx-style')||'glass';}catch(e){}
+applyStyle(savedStyle,false);
 await setOrder(151,{scramble:reduce?'instant':'none'});
 setView('3d');
 if(!reduce)setTimeout(()=>startRunner('scramble',170),500);
