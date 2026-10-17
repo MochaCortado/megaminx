@@ -39,7 +39,14 @@ body{margin:0;background:var(--nave-deep);color:var(--ink);font:400 15px/1.5 var
   -webkit-mask-image:linear-gradient(to bottom,#000 0%,transparent 85%);mask-image:linear-gradient(to bottom,#000 0%,transparent 85%)}
 #view{position:relative;display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 #view:active{cursor:grabbing}
-.views{position:absolute;top:max(18px,env(safe-area-inset-top,0px));left:max(18px,env(safe-area-inset-left,0px));display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.bar{position:absolute;top:max(18px,env(safe-area-inset-top,0px));left:max(18px,env(safe-area-inset-left,0px));display:flex;gap:8px}
+.views{display:flex;gap:2px;padding:4px;border-radius:14px;background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.sound{display:grid;place-items:center;width:40px;padding:0;border-radius:14px;background:var(--glass);border:1px solid var(--glass-edge);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:var(--faint);cursor:pointer}
+.sound:hover{color:var(--muted)}
+.sound[aria-pressed="true"]{color:var(--gold)}
+.sound svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.sound .on,.sound[aria-pressed="true"] .off{display:none}
+.sound[aria-pressed="true"] .on{display:inline}
 .views button{border:0;background:transparent;color:var(--muted);border-radius:10px;padding:8px 14px;font:500 14px/1 var(--ui)}
 .views button[aria-pressed="true"]{background:rgba(217,180,90,.16);color:var(--ink);box-shadow:inset 0 0 0 1px rgba(217,180,90,.35)}
 .hint{position:absolute;left:max(18px,env(safe-area-inset-left,0px));bottom:16px;max-width:min(520px,calc(100% - 36px));font:400 13px/1.45 var(--ui);color:var(--muted);pointer-events:none;text-shadow:0 1px 8px var(--nave-deep)}
@@ -119,9 +126,14 @@ input[type=range]:disabled{opacity:.4}
 <div class="app">
   <div class="stage" id="stage">
     <canvas id="view" aria-label="Interactive Megaminx: drag to orbit, click a face to turn it"></canvas>
-    <div class="views" role="group" aria-label="View">
-      <button type="button" id="v3d" aria-pressed="true">Solid</button>
-      <button type="button" id="vnet" aria-pressed="false">Unfolded</button>
+    <div class="bar">
+      <div class="views" role="group" aria-label="View">
+        <button type="button" id="v3d" aria-pressed="true">Solid</button>
+        <button type="button" id="vnet" aria-pressed="false">Unfolded</button>
+      </div>
+      <button type="button" class="sound" id="sound" aria-pressed="false" aria-label="Music" title="Music">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
+      </button>
     </div>
     <div class="hint" id="hint">Drag to orbit, pinch or scroll to zoom. Click any face to turn it; shift-click turns it back.</div>
     <div class="loading" id="loading"><div>Cutting the facelets<span id="loadingN">342,012 pieces of glass</span></div></div>
@@ -494,6 +506,46 @@ setView('3d');
 if(!reduce)setTimeout(()=>startRunner('scramble',170),500);
 ui();
 requestAnimationFrame(frame);
+})();
+</script>
+<script>
+/* ---------- music: "Stained-Glass Lullaby", looping softly. Browsers only allow sound after a click or key press,
+   so it starts on the first one; the speaker button mutes it and the choice is remembered. ---------- */
+(function(){
+const SRC='music.mp3',VOL=.35,LOOP=162.5; // next pass starts while the last one's fade-out tail decays
+const btn=document.getElementById('sound');
+let want=true;try{want=localStorage.getItem('megaminx-music')!=='off';}catch(e){}
+let ctx=null,gain=null,buf=null,data=null,nextAt=0,timer=null,playing=false,started=false;
+const load=()=>data||(data=fetch(SRC).then(r=>r.arrayBuffer()));
+addEventListener('load',()=>setTimeout(()=>{if(want)load().catch(()=>{});},1200));
+function schedule(){
+  while(nextAt<ctx.currentTime+12){const s=ctx.createBufferSource();s.buffer=buf;s.connect(gain);s.start(Math.max(nextAt,ctx.currentTime));nextAt+=LOOP;}
+}
+function show(){btn.setAttribute('aria-pressed',String(playing));}
+async function play(){
+  playing=true;show();
+  try{
+    if(!ctx){const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC();gain=ctx.createGain();gain.gain.value=0;gain.connect(ctx.destination);}
+    await ctx.resume();
+    if(!buf)buf=await ctx.decodeAudioData((await load()).slice(0));
+    if(!playing)return;
+    if(!started){started=true;nextAt=ctx.currentTime+.05;}
+    schedule();clearInterval(timer);timer=setInterval(schedule,1000);
+    const t=ctx.currentTime;gain.gain.cancelScheduledValues(t);gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(VOL,t+2.5);
+  }catch(e){playing=false;show();}
+}
+function stop(){
+  playing=false;show();
+  if(!ctx)return;
+  const t=ctx.currentTime;gain.gain.cancelScheduledValues(t);gain.gain.setValueAtTime(gain.gain.value,t);gain.gain.linearRampToValueAtTime(0,t+.6);
+  setTimeout(()=>{if(!playing){clearInterval(timer);ctx.suspend();}},700);
+}
+function remember(v){want=v;try{localStorage.setItem('megaminx-music',v?'on':'off');}catch(e){}}
+btn.addEventListener('click',()=>{if(playing){remember(false);stop();}else{remember(true);play();}});
+// pointerup, not pointerdown: a touch only counts as a user gesture for audio when the finger lifts
+const first=e=>{if(btn.contains(e.target))return;removeEventListener('pointerup',first,true);removeEventListener('keydown',first,true);if(want&&!playing)play();};
+addEventListener('pointerup',first,true);addEventListener('keydown',first,true);
+document.addEventListener('visibilitychange',()=>{if(!ctx||!playing)return;if(document.hidden){clearInterval(timer);ctx.suspend();}else ctx.resume().then(()=>{schedule();timer=setInterval(schedule,1000);});});
 })();
 </script>
 
