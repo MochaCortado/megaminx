@@ -122,6 +122,12 @@ input[type=range]:disabled{opacity:.4}
 .stage[data-style="bricks"]{background:#237841}
 .stage[data-style="comic"] .hint,.stage[data-style="watercolor"] .hint{color:#3b352f;text-shadow:none}
 
+/* Penrose view: the pane swaps the Megaminx-only blocks for the Penrose ones */
+.app[data-view="pen"] [data-mode="mega"],.app:not([data-view="pen"]) [data-mode="pen"]{display:none!important}
+.pen-note{margin:0;max-width:30ch;text-align:center;color:var(--muted);font:400 13px/1.45 var(--ui);text-wrap:balance}
+.pen-note a{color:var(--gold);text-decoration:none}
+.pen-note a:hover{text-decoration:underline}
+
 @media (max-width:760px){
   .app{height:auto;min-height:100%;overflow:visible;display:flex;flex-direction:column}
   .stage{position:relative;height:62vh;flex:none}
@@ -142,6 +148,7 @@ input[type=range]:disabled{opacity:.4}
       <div class="views" role="group" aria-label="View">
         <button type="button" id="v3d" aria-pressed="true">Solid</button>
         <button type="button" id="vnet" aria-pressed="false">Unfolded</button>
+        <button type="button" id="vpen" aria-pressed="false">Penrose</button>
       </div>
       <button type="button" class="sound" id="sound" aria-pressed="false" aria-label="Music" title="Music">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="on" d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
@@ -152,12 +159,16 @@ input[type=range]:disabled{opacity:.4}
   </div>
 
   <section class="pane" aria-label="Controls">
-    <header>
+    <header data-mode="mega">
       <h1>The Megaminx star</h1>
       <p class="lede">Scramble a big Megaminx and every one of its twelve faces settles into the same five-pointed rose window.</p>
     </header>
+    <header data-mode="pen">
+      <h1>The Penrose Megaminx</h1>
+      <p class="lede">Each of the Megaminx’s 30 edges swells into a golden rhombus. Drag any sticker to slide its ring around the solid.</p>
+    </header>
 
-    <div class="rose">
+    <div class="rose" data-mode="mega">
       <svg id="rose" viewBox="-1.05 -1.05 2.1 2.1" role="img" aria-label="Diagram of one face: a center pentagon, five striped edge wedges, and five grids of corner cells"></svg>
       <ul class="legend" id="legend">
         <li><button type="button" data-zone="center">Center <b id="zc">1</b><small>Fixed. It never leaves its face.</small></button></li>
@@ -166,7 +177,22 @@ input[type=range]:disabled{opacity:.4}
       </ul>
     </div>
 
-    <div class="field" role="group" aria-labelledby="ordLabel">
+    <div class="rose" data-mode="pen">
+      <svg id="penRose" viewBox="-1.05 -1.05 2.1 2.1" role="img" aria-label="The puzzle seen straight down a five-way point"></svg>
+      <p class="pen-note">Seen straight down a five-way point, it flattens into <a href="https://x.com/jagarikin/status/2111547264363905353" target="_blank" rel="noopener">jagarikin</a>’s Penrose Rubik’s Cube.</p>
+    </div>
+
+    <div class="field" role="group" aria-labelledby="penGridLabel" data-mode="pen">
+      <span class="name" id="penGridLabel">Grid <em>stickers per rhombus</em></span>
+      <div class="toggles" id="penGrid"></div>
+    </div>
+
+    <div class="field" role="group" aria-labelledby="penColLabel" data-mode="pen">
+      <span class="name" id="penColLabel">Colours</span>
+      <div class="toggles" id="penCols"></div>
+    </div>
+
+    <div class="field" role="group" aria-labelledby="ordLabel" data-mode="mega">
       <span class="name" id="ordLabel">Order <em id="ordName"></em></span>
       <div class="orders" id="orders"></div>
     </div>
@@ -183,10 +209,10 @@ input[type=range]:disabled{opacity:.4}
     </div>
 
     <div class="field">
-      <label class="name" for="depth">Turn depth <em id="depthOut"></em></label>
-      <input type="range" id="depth" min="1" max="75" value="75">
+      <label class="name" for="depth" data-mode="mega">Turn depth <em id="depthOut"></em></label>
+      <input type="range" data-mode="mega" id="depth" min="1" max="75" value="75">
       <div class="toggles">
-        <button type="button" class="chip" id="dir" aria-pressed="false">Turn counterclockwise</button>
+        <button type="button" class="chip" data-mode="mega" id="dir" aria-pressed="false">Turn counterclockwise</button>
         <button type="button" class="chip" id="faceOn">Face the nearest star</button>
         <button type="button" class="chip" id="spin" aria-pressed="true">Slow spin</button>
       </div>
@@ -407,7 +433,7 @@ const STY={
 let style='glass';
 function setPalette(list){
   list.forEach((h,i)=>{const c=new THREE.Color(h);c.convertSRGBToLinear();pal8[i]=[Math.round(c.r*255),Math.round(c.g*255),Math.round(c.b*255)];});
-  Object.values(cache).forEach(writeColors);
+  Object.values(cache).forEach(writeColors);pen.recolor();
 }
 function setGap(p,gap){
   if(p.gapNow===gap||(p.gapNow===undefined&&gap==='scale')){p.gapNow=gap;return;}
@@ -435,7 +461,7 @@ function applyStyle(name,save){
   if(!STY[name])name='glass';finishAnim();style=name;const S=STY[name];
   stage.dataset.style=name;lead3.visible=!!S.lead;
   renderer.setPixelRatio(Math.min(S.post?1.5:2,window.devicePixelRatio||1));resize();
-  setPalette(PALS[S.pal||'base']);Object.values(cache).forEach(styleMesh);
+  setPalette(PALS[S.pal||'base']);Object.values(cache).forEach(styleMesh);pen.style();
   if(cur)drawRose();
   document.querySelectorAll('#styles button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.style===name)));
   if(save)try{localStorage.setItem('megaminx-style',name);}catch(e){}
@@ -443,7 +469,7 @@ function applyStyle(name,save){
 const idMat=new THREE.ShaderMaterial({blending:THREE.NoBlending,
   vertexShader:'attribute float fid;attribute float region;varying float vF;varying float vR;void main(){vF=fid;vR=region;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
   fragmentShader:'varying float vF;varying float vR;void main(){float f=floor(vF+.5)+1.;gl_FragColor=vec4(floor(vR+.5)/255.,mod(f,256.)/255.,mod(floor(f/256.),256.)/255.,floor(f/65536.)/255.);}'});
-const PRE=`uniform sampler2D tex;uniform sampler2D ids;uniform vec2 res;uniform float dpr;uniform vec3 faceN[12];varying vec2 vUv;
+const PRE=`uniform sampler2D tex;uniform sampler2D ids;uniform vec2 res;uniform float dpr;uniform vec3 faceN[42];varying vec2 vUv;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+vec2(1.,1.)),f.x),f.y);}
 float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*noise(p);p*=2.03;a*=.5;}return s;}
@@ -452,7 +478,8 @@ float reg(vec2 px){return floor(idAt(px).r*255.+.5);}
 vec3 col(vec2 px){vec4 t=texture2D(tex,clamp(px,vec2(.5),res-.5)/res);return t.a>.004?t.rgb/t.a:vec3(0.);}
 float edgeR(vec2 px,float r){float c=reg(px),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(reg(px+vec2(cos(a),sin(a))*r)-c)));}return e;}
 float edgeBg(vec2 px,float r){float c=min(reg(px),1.),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(min(reg(px+vec2(cos(a),sin(a))*r),1.)-c)));}return e;}
-float lam(vec2 px){float r=reg(px);if(r<.5)return 1.;float f=floor((r-1.)/11.);vec3 n=vec3(0.,0.,1.);for(int i=0;i<12;i++){if(float(i)==f)n=faceN[i];}
+float fidx0(float r){return r<132.5?floor((r-1.)/11.):12.+floor((r-133.)/4.);}
+float lam(vec2 px){float r=reg(px);if(r<.5)return 1.;float f=fidx0(r);vec3 n=vec3(0.,0.,1.);for(int i=0;i<42;i++){if(float(i)==f)n=faceN[i];}
   return clamp(dot(n,normalize(vec3(.35,.6,.72))),0.,1.);}
 `;
 // extra passes: the far side's IDs (X-ray) and each pixel's view-space position (Bricks)
@@ -460,14 +487,14 @@ const idBackMat=idMat.clone();idBackMat.side=THREE.BackSide;
 const geoMat=new THREE.ShaderMaterial({blending:THREE.NoBlending,
   vertexShader:'varying vec3 vP;void main(){vec4 p=modelViewMatrix*vec4(position,1.);vP=p.xyz;gl_Position=projectionMatrix*p;}',
   fragmentShader:'varying vec3 vP;void main(){gl_FragColor=vec4(vP,1.);}'});
-const PRE2=`uniform sampler2D geo;uniform sampler2D idsB;uniform float cell;uniform vec3 faceC[12];uniform vec3 faceE1[12];uniform vec3 faceE2[12];
+const PRE2=`uniform sampler2D geo;uniform sampler2D idsB;uniform float cell;uniform vec3 faceC[42];uniform vec3 faceE1[42];uniform vec3 faceE2[42];
 const vec3 LDIR=vec3(.35,.6,.72);
 vec3 vpos(vec2 px){return texture2D(geo,clamp(px,vec2(.5),res-.5)/res).xyz;}
 float regB(vec2 px){return floor(texture2D(idsB,clamp(px,vec2(.5),res-.5)/res).r*255.+.5);}
-float fidx(float r){return floor((r-1.)/11.);}
-vec3 fN(float r){float f=fidx(r);vec3 n=vec3(0.,0.,1.);for(int i=0;i<12;i++){if(float(i)==f)n=faceN[i];}return n;}
+float fidx(float r){return fidx0(r);}
+vec3 fN(float r){float f=fidx(r);vec3 n=vec3(0.,0.,1.);for(int i=0;i<42;i++){if(float(i)==f)n=faceN[i];}return n;}
 vec2 fuv(vec2 px,float r){float f=fidx(r);vec3 c=vec3(0.),a=vec3(1.,0.,0.),b=vec3(0.,1.,0.);
-  for(int i=0;i<12;i++){if(float(i)==f){c=faceC[i];a=faceE1[i];b=faceE2[i];}}vec3 p=vpos(px)-c;return vec2(dot(p,a),dot(p,b));}
+  for(int i=0;i<42;i++){if(float(i)==f){c=faceC[i];a=faceE1[i];b=faceE2[i];}}vec3 p=vpos(px)-c;return vec2(dot(p,a),dot(p,b));}
 float edgeRB(vec2 px,float r){float c=regB(px),e=0.;for(int i=0;i<8;i++){float a=float(i)*.7854;e=max(e,step(.5,abs(regB(px+vec2(cos(a),sin(a))*r)-c)));}return e;}
 `;
 const LOOKS={
@@ -565,8 +592,8 @@ bricks:`void main(){vec2 px=vUv*res;float r=reg(px);
 const postMats={};
 for(const k in LOOKS)postMats[k]=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,fragmentShader:PRE+PRE2+LOOKS[k],
   vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
-  uniforms:{tex:{value:null},ids:{value:null},res:{value:new THREE.Vector2(1,1)},dpr:{value:1},faceN:{value:Array.from({length:12},()=>new THREE.Vector3())},
-    geo:{value:null},idsB:{value:null},cell:{value:.1},faceC:{value:Array.from({length:12},()=>new THREE.Vector3())},faceE1:{value:Array.from({length:12},()=>new THREE.Vector3())},faceE2:{value:Array.from({length:12},()=>new THREE.Vector3())}}});
+  uniforms:{tex:{value:null},ids:{value:null},res:{value:new THREE.Vector2(1,1)},dpr:{value:1},faceN:{value:Array.from({length:42},()=>new THREE.Vector3())},
+    geo:{value:null},idsB:{value:null},cell:{value:.1},faceC:{value:Array.from({length:42},()=>new THREE.Vector3())},faceE1:{value:Array.from({length:42},()=>new THREE.Vector3())},faceE2:{value:Array.from({length:42},()=>new THREE.Vector3())}}});
 const postScene=new THREE.Scene(),postCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1),postQuad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),postMats.comic);postScene.add(postQuad);
 let rtCol=null,rtId=null,rtIdB=null,rtGeo=null;const dbs=new THREE.Vector2();
 function target(t,ms){if(t&&t.width===dbs.x&&t.height===dbs.y)return t;if(t)t.dispose();
@@ -584,12 +611,247 @@ function draw(scene,cam){
   if(S.geo){rtGeo=floatTarget(rtGeo);scene.overrideMaterial=geoMat;renderer.setRenderTarget(rtGeo);renderer.clear();renderer.render(scene,cam);u.geo.value=rtGeo.texture;
     FACES.forEach((F,f)=>{if(scene===sceneN){u.faceC.value[f].set(0,0,0);u.faceE1.value[f].set(1,0,0);u.faceE2.value[f].set(0,1,0);return;}
       const e1=norm(sub(F.P[0],F.C));u.faceC.value[f].set(...F.C).applyMatrix4(W);u.faceE1.value[f].set(...e1).transformDirection(W);u.faceE2.value[f].set(...cross(F.n,e1)).transformDirection(W);});
-    u.cell.value=cur&&cur.m?Math.max((2/PHI)*(.46-.13/cur.m)/cur.m*.5,.055):.12;}
+    pen.basis(u,W,scene===sceneN);
+    u.cell.value=view==='pen'?pen.cell():cur&&cur.m?Math.max((2/PHI)*(.46-.13/cur.m)/cur.m*.5,.055):.12;}
   scene.overrideMaterial=null;
-  u.faceN.value.forEach((v,f)=>{if(scene===sceneN)v.set(0,0,1);else v.set(...FACES[f].n).transformDirection(W);});
+  if(!S.geo)pen.basis(u,W,scene===sceneN);
+  u.faceN.value.forEach((v,f)=>{if(f>=12)return;if(scene===sceneN)v.set(0,0,1);else v.set(...FACES[f].n).transformDirection(W);});
   u.tex.value=rtCol.texture;u.ids.value=rtId.texture;u.res.value.copy(dbs);u.dpr.value=renderer.getPixelRatio();
   renderer.setRenderTarget(null);postQuad.material=pm;renderer.render(postScene,postCam);
 }
+
+/* ---------- Penrose Megaminx ----------
+   After jagarikin's Penrose Rubik's Cube (x.com/jagarikin/status/2111547264363905353), which is this solid seen straight
+   down a five-way point. The solid is a rhombic triacontahedron built from the Megaminx's six face axes: every Megaminx
+   edge swells into a golden rhombus and every face centre rises into a five-way point. Each rhombus is an n x n sticker
+   grid; a move slides one ring of stickers around a belt (the ten rhombi that share one axis).
+   The morph is one number X: 0 = the Megaminx, 1 = the Penrose solid. Stickers bloom out of each face centre over the
+   flat Megaminx, then the face centres lift into the points. */
+const pen=(function(){
+  const FIVE=['#ff0001','#02fc66','#ca00fc','#ccff00','#0162ff'];   // jagarikin's colours, clockwise from the top in his solved frame
+  const lin=h=>{const c=new THREE.Color(h);c.convertSRGBToLinear();return [Math.round(c.r*255),Math.round(c.g*255),Math.round(c.b*255)];};
+  const five8=FIVE.map(lin);
+  const Z=[];FACES.forEach(F=>{if(!Z.some(z=>Math.abs(dot(z,F.n))>.99))Z.push(F.n);});
+  const RH=[];
+  for(let i=0;i<6;i++)for(let j=i+1;j<6;j++){const n0=norm(cross(Z[i],Z[j]));
+    for(const sg of[1,-1]){const n=mul(n0,sg);let c=[0,0,0];for(let k=0;k<6;k++)if(k!==i&&k!==j)c=add(c,mul(Z[k],Math.sign(dot(n,Z[k]))/2));
+      RH.push({i,j,n,c,axis:RH.length>>1,acute00:dot(Z[i],Z[j])>0});}}
+  const raw=(R,p,q)=>add(R.c,add(mul(Z[R.i],p-.5),mul(Z[R.j],q-.5)));
+  // scale so the three-way points sit exactly on the Megaminx's corners
+  const SC=Math.sqrt(3)/Math.hypot(...raw(RH[0],...(RH[0].acute00?[1,0]:[0,0])));
+  const nearFace=v=>{let b=0;FACES.forEach((F,i)=>{if(dot(F.n,v)>dot(FACES[b].n,v))b=i;});return b;};
+  RH.forEach(R=>{
+    const mk=c=>{const full=mul(raw(R,...c),SC),f=nearFace(norm(full));return {u:c,full,flat:FACES[f].C,face:f};};
+    R.A=mk(R.acute00?[0,0]:[1,0]);R.B=mk(R.acute00?[1,1]:[0,1]);
+    R.e1=R.acute00?[1,0]:[0,0];R.e2=R.acute00?[0,1]:[1,1];R.E1=mul(raw(R,...R.e1),SC);R.E2=mul(raw(R,...R.e2),SC);});
+  // five colours = the compound of five cubes: the 15 rhombus axes fall into 5 mutually perpendicular triples
+  const ax=[];for(let a=0;a<15;a++)ax.push(RH[2*a].n);
+  const uf=ax.map((_,a)=>a),find=a=>uf[a]===a?a:(uf[a]=find(uf[a]));
+  for(let a=0;a<15;a++)for(let b=a+1;b<15;b++)if(Math.abs(dot(ax[a],ax[b]))<1e-6)uf[find(a)]=find(b);
+  const roots=[...new Set(ax.map((_,a)=>find(a)))],triple=r=>roots.indexOf(find(RH[r].axis));
+  // the reference view: straight down the five-way point the camera starts nearest, one fat rhombus pointing up
+  const VIEW=(()=>{const d=FACES[0].n,fat=RH.map((R,r)=>r).sort((x,y)=>dot(RH[y].n,d)-dot(RH[x].n,d)).slice(0,5);
+    const ctr=r=>mul(add(RH[r].A.full,RH[r].B.full),.5),flat=v=>sub(v,mul(d,dot(v,d)));
+    const top=fat.slice().sort((x,y)=>flat(ctr(y))[1]-flat(ctr(x))[1])[0],up=norm(flat(ctr(top))),right=cross(up,d);
+    const cw=r=>{const c=ctr(r);return (Math.PI/2-Math.atan2(dot(c,up),dot(c,right))+4*Math.PI)%(2*Math.PI);};
+    const slotOf=[];fat.slice().sort((x,y)=>cw(x)-cw(y)).forEach((r,k)=>slotOf[triple(r)]=k);
+    let vr=0;RH.forEach(R=>[[0,0],[1,0],[1,1],[0,1]].forEach(c=>{const v=mul(raw(R,...c),SC);vr=Math.max(vr,Math.hypot(dot(v,up),dot(v,right)));}));
+    return {d,up,right,slotOf,vr};})();
+  // belts: the ten rhombi around each axis, in order; ts says whether the ring runs along +Z[other] or -Z[other]
+  const BELT=[],BIDX=[];
+  for(let k=0;k<6;k++){const zk=Z[k],e1=norm(cross(zk,Math.abs(zk[0])<.9?[1,0,0]:[0,1,0])),e2=cross(zk,e1);
+    const L=RH.map((R,r)=>({R,r})).filter(o=>o.R.i===k||o.R.j===k).map(({R,r})=>{const oth=R.i===k?R.j:R.i;
+      return {r,oth,kIsX:R.i===k,ts:Math.sign(dot(cross(zk,R.n),Z[oth])),ang:Math.atan2(dot(R.n,e2),dot(R.n,e1))};}).sort((a,b)=>a.ang-b.ang);
+    BELT.push(L);const m={};L.forEach((b,e)=>m[b.r]=e);BIDX.push(m);}
+  // sticker frames are signed permutations [a,b,c,d] acting on (x,y) about the cell centre
+  const TR=b=>b.kIsX?[0,b.ts,1,0]:[b.ts,0,0,1],inv=M=>[M[0],M[2],M[1],M[3]],
+    mm=(A,B)=>[A[0]*B[0]+A[1]*B[2],A[0]*B[1]+A[1]*B[3],A[2]*B[0]+A[3]*B[2],A[2]*B[1]+A[3]*B[3]],
+    ap=(M,p)=>{const x=p[0]-.5,y=p[1]-.5;return [M[0]*x+M[1]*y+.5,M[2]*x+M[3]*y+.5];},I2=[1,0,0,1];
+
+  let N=4,H=null,MT=null,PAT=null,built=false,scheme='twelve',lift=1,X=0,last=0,dirty=true,wasOn=false;
+  let anim=null,drag=null,queue=[],plog=[],diagDirty=true;
+  try{scheme=localStorage.getItem('megaminx-pen-colours')==='five'?'five':'twelve';}catch(e){}
+  const slot=(r,a,b)=>(r*N+a)*N+b;
+  function ring(k,t){const out=[];BELT[k].forEach(b=>{for(let m=0;m<N;m++){const o=b.ts>0?m:N-1-m;out.push({b,s:b.kIsX?slot(b.r,t,o):slot(b.r,o,t)});}});return out;}
+  function setup(n){
+    N=n;const S=30*N*N;H=new Int32Array(S);MT=new Array(S);PAT={twelve:new Array(S),five:new Array(S)};
+    for(let r=0;r<30;r++)for(let a=0;a<N;a++)for(let b=0;b<N;b++){const s=slot(r,a,b),R=RH[r];H[s]=s;MT[s]=I2;
+      PAT.five[s]={A:VIEW.slotOf[triple(r)],B:0,ca:null};
+      // twelve: each half of the rhombus belongs to the Megaminx face whose centre became that point
+      const side=R.acute00?a+b-(N-1):b-a;
+      PAT.twelve[s]=side<0?{A:R.A.face,B:R.A.face,ca:null}:side>0?{A:R.B.face,B:R.B.face,ca:null}:{A:R.A.face,B:R.B.face,ca:R.acute00?[0,0]:[1,0]};}
+    plog=[];queue=[];anim=null;built=true;dirty=diagDirty=true;
+  }
+  function shown(s){const P=PAT[scheme][H[s]];return P.ca?{A:P.A,B:P.B,ca:ap(MT[s],P.ca)}:P;}
+  function solved(){for(let s=0;s<H.length;s++){const d=shown(s),w=PAT[scheme][s];
+      if(!w.ca){if(d.ca||d.A!==w.A)return false;continue;}
+      if(!d.ca)return false;const same=d.A===w.A&&d.B===w.B&&Math.abs(d.ca[0]-w.ca[0])<.01&&Math.abs(d.ca[1]-w.ca[1])<.01;
+      const flip=d.A===w.B&&d.B===w.A&&Math.abs(d.ca[0]-(1-w.ca[0]))<.01&&Math.abs(d.ca[1]-(1-w.ca[1]))<.01;if(!same&&!flip)return false;}
+    return true;}
+  function slide(k,t,m){const sl=ring(k,t),L=sl.length,h=sl.map(x=>H[x.s]),M=sl.map(x=>MT[x.s]);
+    sl.forEach((x,i)=>{const d=sl[(((i+m)%L)+L)%L];H[d.s]=h[i];MT[d.s]=mm(inv(TR(d.b)),mm(TR(x.b),M[i]));});diagDirty=true;}
+
+  /* ---------- geometry ---------- */
+  const bary=(p,q,a,b,c)=>{const d=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1]),l1=((b[1]-c[1])*(p-c[0])+(c[0]-b[0])*(q-c[1]))/d,
+    l2=((c[1]-a[1])*(p-c[0])+(a[0]-c[0])*(q-c[1]))/d;return [l1,l2,1-l1-l2];};
+  const apex=(P,l)=>l>=1?P.full:l<=0?P.flat:add(P.flat,mul(sub(P.full,P.flat),l));
+  function mpt(r,p,q,l=lift){const R=RH[r],s=R.acute00?p+q-1:q-p,P=s<=0?R.A:R.B,w=bary(p,q,P.u,R.e1,R.e2),A=apex(P,l),k=1+.004*(1-l);   // k: ride just above the Megaminx while flat
+    return [(w[0]*A[0]+w[1]*R.E1[0]+w[2]*R.E2[0])*k,(w[0]*A[1]+w[1]*R.E1[1]+w[2]*R.E2[1])*k,(w[0]*A[2]+w[1]*R.E1[2]+w[2]*R.E2[2])*k];}
+  function beltPt(k,rr,s){const L=10*N;rr=((rr%L)+L)%L;let e=Math.floor(rr/N);if(e>9)e=9;const b=BELT[k][e],f=ap(inv(TR(b)),[(rr-e*N)/N,s]);return mpt(b.r,f[0],f[1]);}
+  function cut(polys,f){const out=[];for(const P of polys){const a=[],b=[];
+      for(let i=0;i<P.length;i++){const p=P[i],q=P[(i+1)%P.length],fp=f(p),fq=f(q);if(fp<=0)a.push(p);if(fp>=0)b.push(p);
+        if((fp<0&&fq>0)||(fp>0&&fq<0)){const t=fp/(fp-fq),x=[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t];a.push(x);b.push(x);}}
+      if(a.length>2)out.push(a);if(b.length>2)out.push(b);}return out;}
+  const grp=new THREE.Group();grp.visible=false;root.add(grp);
+  const geo=new THREE.BufferGeometry();geo.boundingSphere=new THREE.Sphere(new THREE.Vector3(),2.2);
+  let cap=0,posA,colA,fidA,regA;
+  function ensure(nv){if(nv<=cap)return;cap=Math.ceil(nv*1.3);geo.dispose();
+    posA=new THREE.BufferAttribute(new Float32Array(cap*3),3);colA=new THREE.BufferAttribute(new Uint8Array(cap*3),3,true);
+    fidA=new THREE.BufferAttribute(new Float32Array(cap),1);regA=new THREE.BufferAttribute(new Float32Array(cap),1);
+    [posA,colA,fidA,regA].forEach(A=>A.setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('position',posA);geo.setAttribute('color',colA);geo.setAttribute('fid',fidA);geo.setAttribute('region',regA);}
+  ensure(30*25*12);
+  const front=new THREE.Mesh(geo,STY[style].mat),back=new THREE.Mesh(geo,backMat);
+  front.frustumCulled=back.frustumCulled=false;grp.add(back);grp.add(front);
+  const rgb=i=>scheme==='five'?five8[i]:pal8[i];
+  const reveal=()=>Math.min(1,X/.45),liftOf=x=>{const v=Math.max(0,Math.min(1,(x-.31)/.69));return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2;};
+  function rebuild(move){
+    const P=[],C=[],FI=[],RG=[],R0=reveal(),gap=1-(STY[style].gap==='scale'?.14:0)*lift;   // the glass leading opens as the points rise
+    const emit=(polys,map,pat,fid,reg)=>{for(const Q of polys){let cx=0,cy=0;Q.forEach(p=>{cx+=p[0];cy+=p[1];});cx/=Q.length;cy/=Q.length;
+        const c=rgb(pat.ca&&(cx-.5)*(pat.ca[0]-.5)+(cy-.5)*(pat.ca[1]-.5)<0?pat.B:pat.A),V=Q.map(map);
+        let nw=[0,0,0];for(let i=0;i<V.length;i++)nw=add(nw,cross(V[i],V[(i+1)%V.length]));
+        if(dot(nw,V[0])<0)V.reverse();   // wind every polygon to face outward (Newell normal vs. the outward position)
+        for(let i=1;i+1<V.length;i++)for(const v of[V[0],V[i],V[i+1]]){P.push(v[0],v[1],v[2]);C.push(c[0],c[1],c[2]);FI.push(fid);RG.push(reg);}}};
+    const sq=h=>{const a=.5-h/2,b=.5+h/2;return [[[a,a],[b,a],[b,b],[a,b]]];};
+    const moving=new Set();let sl=null;if(move){sl=ring(move.k,move.t);sl.forEach(x=>moving.add(x.s));}
+    for(let r=0;r<30;r++){const R=RH[r];for(let a=0;a<N;a++)for(let b=0;b<N;b++){const s=slot(r,a,b);if(moving.has(s))continue;
+      let h=gap;if(R0<1){const cu=[(a+.5)/N,(b+.5)/N],dd=Math.min(Math.hypot(cu[0]-R.A.u[0],cu[1]-R.A.u[1]),Math.hypot(cu[0]-R.B.u[0],cu[1]-R.B.u[1]));
+        h*=Math.max(0,Math.min(1,(R0-.55*dd)/.45));if(h<=.002)continue;}
+      const pat=shown(s);let polys=sq(h);
+      if(R.acute00?a+b===N-1:a===b)polys=cut(polys,R.acute00?p=>p[0]+p[1]-1:p=>p[0]-p[1]);   // fold along the Megaminx edge
+      if(pat.ca)polys=cut(polys,p=>(p[0]-.5)*(pat.ca[0]-.5)+(p[1]-.5)*(pat.ca[1]-.5));
+      emit(polys,p=>mpt(r,(a+p[0])/N,(b+p[1])/N),pat,s,133+r*4+((a&1)|((b&1)<<1)));}}
+    if(move){const {k,t,off}=move;
+      sl.forEach((x,i)=>{const p0=shown(x.s),ca=p0.ca?ap(TR(x.b),p0.ca):null,pat={A:p0.A,B:p0.B,ca},r0=i+off;let polys=sq(gap);
+        for(let e=Math.ceil(r0/N)*N;e<r0+1;e+=N){const u=e-r0;polys=cut(polys,p=>p[0]-u);}
+        if(ca)polys=cut(polys,p=>(p[0]-.5)*(ca[0]-.5)+(p[1]-.5)*(ca[1]-.5));
+        emit(polys,p=>beltPt(k,r0+p[0],(t+p[1])/N),pat,x.s,133+x.b.r*4+((i&1)|((t&1)<<1)));});}
+    const nv=P.length/3;ensure(nv);posA.array.set(P);colA.array.set(C);fidA.array.set(FI);regA.array.set(RG);
+    [posA,colA,fidA,regA].forEach(A=>A.needsUpdate=true);geo.setDrawRange(0,nv);dirty=false;
+  }
+
+  /* ---------- the flat view in the pane: his picture of the current puzzle ---------- */
+  function diagram(){
+    const el=document.getElementById('penRose');if(!el||!built)return;diagDirty=false;
+    const {d,up,right,vr}=VIEW,hex=scheme==='five'?FIVE:PALS[STY[style].pal||'base'];let h='';
+    for(let r=0;r<30;r++){const R=RH[r];if(dot(R.n,d)<1e-6)continue;
+      for(let a=0;a<N;a++)for(let b=0;b<N;b++){const pat=shown(slot(r,a,b));let polys=[[[0,0],[1,0],[1,1],[0,1]]];
+        if(pat.ca)polys=cut(polys,p=>(p[0]-.5)*(pat.ca[0]-.5)+(p[1]-.5)*(pat.ca[1]-.5));
+        for(const Q of polys){let cx=0,cy=0;Q.forEach(p=>{cx+=p[0];cy+=p[1];});cx/=Q.length;cy/=Q.length;
+          const c=hex[pat.ca&&(cx-.5)*(pat.ca[0]-.5)+(cy-.5)*(pat.ca[1]-.5)<0?pat.B:pat.A];
+          h+=`<polygon points="${Q.map(p=>{const v=mul(raw(R,(a+p[0])/N,(b+p[1])/N),SC);return (dot(v,right)/vr).toFixed(4)+','+(-dot(v,up)/vr).toFixed(4);}).join(' ')}" fill="${c}"/>`;}}}
+    el.innerHTML=`<g stroke="#04050b" stroke-width="${N>4?.008:.011}" stroke-linejoin="round">${h}</g>`;
+  }
+
+  /* ---------- playing: drag a sticker along one of its two rings ---------- */
+  const v3=new THREE.Vector3();
+  function px(v,rc){v3.set(v[0],v[1],v[2]).project(cam3);return [(v3.x+1)/2*rc.width,(1-v3.y)/2*rc.height];}
+  stage.addEventListener('pointerdown',e=>{
+    if(e.target!==canvas||view!=='pen'||X<1||anim||queue.length||drag||(e.pointerType==='mouse'&&e.button!==0))return;
+    const rc=canvas.getBoundingClientRect();ray.setFromCamera(new THREE.Vector2((e.clientX-rc.left)/rc.width*2-1,-(e.clientY-rc.top)/rc.height*2+1),cam3);
+    // pick against the solid itself (the convex hull of the 30 rhombus planes), so the glass leading between stickers counts too
+    const o=ray.ray.origin.toArray(),dv=ray.ray.direction.toArray();let tin=-Infinity,tout=Infinity,r=-1;
+    RH.forEach((R,i)=>{const h=SC*dot(R.c,R.n),dn=dot(R.n,dv),num=h-dot(R.n,o);
+      if(Math.abs(dn)<1e-9){if(num<0)tout=-Infinity;return;}const t=num/dn;if(dn<0){if(t>tin){tin=t;r=i;}}else if(t<tout)tout=t;});
+    if(r<0||tin>tout||tin<0)return;
+    e.stopPropagation();ctl3.autoRotate=false;
+    const R=RH[r],P=add(o,mul(dv,tin)),v=sub(mul(P,1/SC),R.c),g=dot(Z[R.i],Z[R.j]),va=dot(v,Z[R.i]),vb=dot(v,Z[R.j]),
+      cl=x=>Math.max(0,Math.min(N-1,Math.floor(x*N))),a=cl((va-g*vb)/(1-g*g)+.5),b=cl((vb-g*va)/(1-g*g)+.5),p0=px(P,rc);
+    const cands=[[R.i,a],[R.j,b]].map(([k,t])=>{const bb=BELT[k][BIDX[k][r]],p1=px(add(P,mul(Z[bb.oth],bb.ts*SC/N)),rc),dx=p1[0]-p0[0],dy=p1[1]-p0[1],l=Math.hypot(dx,dy)||1;
+      return {k,t,dx:dx/l,dy:dy/l,pps:l};});
+    drag={id:e.pointerId,x0:e.clientX,y0:e.clientY,cands,ch:null,off:0};try{canvas.setPointerCapture(e.pointerId);}catch(err){}
+  },true);
+  // three r128's OrbitControls reads touches from touch events, not pointer events: hold those back while a sticker is dragged
+  for(const t of['touchstart','touchmove'])stage.addEventListener(t,e=>{if(drag)e.stopPropagation();},{capture:true,passive:true});
+  addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dx=e.clientX-drag.x0,dy=e.clientY-drag.y0;
+    if(!drag.ch){if(Math.hypot(dx,dy)<7)return;drag.ch=drag.cands.reduce((m,c)=>Math.abs(c.dx*dx+c.dy*dy)>Math.abs(m.dx*dx+m.dy*dy)?c:m);}
+    drag.off=(drag.ch.dx*dx+drag.ch.dy*dy)/drag.ch.pps;dirty=true;});
+  const release=e=>{if(!drag||e.pointerId!==drag.id)return;const d=drag;drag=null;if(spinOn)ctl3.autoRotate=true;
+    if(!d.ch)return;const to=Math.round(d.off);anim={k:d.ch.k,t:d.ch.t,from:d.off,to,t0:performance.now(),dur:110+60*Math.min(4,Math.abs(to-d.off)),kind:'user'};dirty=true;};
+  addEventListener('pointerup',release);addEventListener('pointercancel',release);
+
+  /* ---------- scramble / unscramble ---------- */
+  const ease=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+  function scramble(){if(busy())return;const r=rng(seed++),n=20+4*N;
+    for(let q=0;q<n;q++){let m=1+((r()*2*N)|0);if(r()<.5)m=-m;queue.push({k:(r()*6)|0,t:(r()*N)|0,m,kind:'scr',dur:60+12*Math.abs(m)});}ui();}
+  function unscramble(){if(busy()||!plog.length)return;const tot=plog.reduce((s,m)=>s+60+12*Math.abs(m.m),0),sp=Math.max(1,tot/4200);
+    for(let q=plog.length-1;q>=0;q--){const m=plog[q];queue.push({k:m.k,t:m.t,m:-m.m,kind:'undo',dur:(60+12*Math.abs(m.m))/sp});}ui();}
+  function reset(){if(!built)return;setup(N);ui();}
+  const busy=()=>!!(queue.length||(anim&&anim.kind!=='user'));
+  function done(a){if(a.to)slide(a.k,a.t,a.to);
+    if(a.kind==='undo')plog.pop();else if(a.to)plog.push({k:a.k,t:a.t,m:a.to});
+    if(a.kind==='user'&&solved())plog=[];ui();}
+
+  /* ---------- per frame ---------- */
+  function tick(now){
+    const dt=Math.min(250,last?now-last:16);last=now;   // wall-clock, so the morph takes the same time at any frame rate
+    const target=view==='pen'?1:0;
+    if(X!==target){if(target&&!built)setup(N);X=reduce?target:Math.max(0,Math.min(1,X+Math.sign(target-X)*dt/1450));lift=liftOf(X);dirty=true;
+      if(X===1||X===0)ui();}
+    const on=X>0;grp.visible=on;if(cur)cur.group.visible=reveal()<1;
+    if(on)lead3.visible=false;else if(wasOn)lead3.visible=!!STY[style].lead;wasOn=on;
+    if(!on)return;
+    if(!anim&&!drag&&queue.length&&X===1){const q=queue.shift();anim={k:q.k,t:q.t,from:0,to:q.m,t0:now,dur:q.dur,kind:q.kind};}
+    let move=null;
+    if(anim){const x=Math.min(1,(now-anim.t0)/anim.dur);if(x>=1){const a=anim;anim=null;done(a);dirty=true;}else{move={k:anim.k,t:anim.t,off:anim.from+(anim.to-anim.from)*ease(x)};}}
+    else if(drag&&drag.ch)move={k:drag.ch.k,t:drag.ch.t,off:drag.off};
+    if(move||dirty)rebuild(move);
+    if(diagDirty&&!anim)diagram();
+  }
+
+  /* ---------- pane ---------- */
+  const gridEl=document.getElementById('penGrid'),colsEl=document.getElementById('penCols');
+  gridEl.innerHTML=[3,4,5].map(n=>`<button type="button" class="chip" data-n="${n}" aria-pressed="false">${n} × ${n}</button>`).join('');
+  colsEl.innerHTML=[['twelve','Megaminx twelve'],['five','jagarikin’s five']].map(([k,l])=>`<button type="button" class="chip" data-c="${k}" aria-pressed="false">${l}</button>`).join('');
+  gridEl.addEventListener('click',e=>{const b=e.target.closest('button[data-n]');if(!b||busy()||anim||drag)return;setup(+b.dataset.n);ui();});
+  colsEl.addEventListener('click',e=>{const b=e.target.closest('button[data-c]');if(!b)return;scheme=b.dataset.c;dirty=diagDirty=true;
+    try{localStorage.setItem('megaminx-pen-colours',scheme);}catch(err){}ui();});
+  function ui(){
+    if(view!=='pen')return;
+    $('bigN').innerHTML=`${fmt(30*N*N)}<small>stickers on 30 rhombi</small>`;
+    $('perFace').innerHTML=`${N*N}<span>on each rhombus</span>`;
+    $('turns').innerHTML=`${fmt(plog.length)}<span>slide${plog.length===1?'':'s'} from solved</span>`;
+    const b=busy()||X<1,st=$('state');st.className='state'+(b?' busy':plog.length?' scr':'');
+    st.querySelector('span').textContent=X<1?'Unfolding the points':queue.length?(queue[0].kind==='undo'?'Unscrambling':'Scrambling'):(plog.length?'Scrambled':'Solved');
+    $('scramble').disabled=b;$('unscramble').disabled=b||!plog.length;$('reset').disabled=b||!plog.length;
+    gridEl.querySelectorAll('button').forEach(x=>{x.setAttribute('aria-pressed',String(+x.dataset.n===N));x.disabled=b;});
+    colsEl.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.c===scheme)));
+  }
+  return {
+    frame:tick,ui,scramble,unscramble,reset,diagram,
+    view(was,v){document.querySelector('.app').dataset.view=v;
+      $('faceOn').textContent=v==='pen'?'Face a five-way point':'Face the nearest star';
+      if(v==='pen'){drag=null;if(!built)setup(N);diagram();ui();}
+      if(was==='pen'&&v==='net'){X=0;lift=liftOf(0);}   // straight to the flat net, no morph
+    },
+    face(){const dv=cam3.position.clone().normalize();let best=null,bd=-2;
+      FACES.forEach(F=>{const n=new THREE.Vector3(...F.n);const d=n.dot(dv);if(d>bd){bd=d;best=n;}});
+      spinOn=false;ctl3.autoRotate=false;btnSpin.setAttribute('aria-pressed','false');
+      fly={from:cam3.position.clone(),to:best.clone().multiplyScalar(Math.max(5.4,cam3.position.length())),t0:performance.now()};},
+    style(){front.material=STY[style].mat;back.visible=!!STY[style].back;dirty=diagDirty=true;},
+    recolor(){dirty=diagDirty=true;},
+    on:()=>X>0,
+    cell:()=>SC/N*.5,
+    // the post looks shade and stud each rhombus from its own plane (slots 12..41 after the Megaminx's 12 faces)
+    basis(u,W,flatNet){for(let r=0;r<30;r++){const f=12+r;
+      if(flatNet||X<=0){u.faceN.value[f].set(0,0,1);u.faceC.value[f].set(0,0,0);u.faceE1.value[f].set(1,0,0);u.faceE2.value[f].set(0,1,0);continue;}
+      const R=RH[r],A=apex(R.A,lift),B=apex(R.B,lift),o=v=>dot(v,R.n)<0?mul(v,-1):v;
+      const n=norm(add(o(norm(cross(sub(R.E1,A),sub(R.E2,A)))),o(norm(cross(sub(R.E1,B),sub(R.E2,B)))))),c=mul(add(add(A,B),add(R.E1,R.E2)),.25);
+      const e1=norm(sub(Z[R.i],mul(n,dot(Z[R.i],n))));
+      u.faceN.value[f].set(...n).transformDirection(W);u.faceC.value[f].set(...c).applyMatrix4(W);u.faceE1.value[f].set(...e1).transformDirection(W);u.faceE2.value[f].set(...cross(n,e1)).transformDirection(W);}},
+    wantUrl:new URLSearchParams(location.search).has('penrose'),
+  };
+})();
 
 /* ---------- state ---------- */
 const cache={};let cur=null,view='3d',log=[],anim=null,runner=null,dir=1;
@@ -654,7 +916,7 @@ canvas.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,t:perfor
 canvas.addEventListener('pointerup',e=>{
   if(!down||!cur)return;const moved=Math.hypot(e.clientX-down.x,e.clientY-down.y),dt=performance.now()-down.t;down=null;
   if(spinOn&&view==='3d')ctl3.autoRotate=true;
-  if(moved>6||dt>450)return;
+  if(moved>6||dt>450||view==='pen')return;
   const r=canvas.getBoundingClientRect(),ndc=new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);
   ray.setFromCamera(ndc,view==='3d'?cam3:camN);
   const hit=ray.intersectObject(view==='3d'?cur.front:cur.net,false)[0];if(!hit)return;
@@ -690,6 +952,7 @@ ordersEl.innerHTML=ORDERS.map(([n,name])=>`<button type="button" data-n="${n}" a
 ordersEl.addEventListener('click',e=>{const b=e.target.closest('button[data-n]');if(!b||runner)return;setOrder(+b.dataset.n);});
 let spinOn=!reduce;ctl3.autoRotate=spinOn;btnSpin.setAttribute('aria-pressed',String(spinOn));
 function ui(){
+  if(view==='pen'){pen.ui();return;}
   if(!cur)return;const m=cur.m;
   depthEl.style.setProperty('--fill',`${m>1?((depthEl.value-1)/(m-1))*100:100}%`);
   $('depthOut').textContent=`${depthEl.value} of ${m} layer${m>1?'s':''}`;
@@ -705,25 +968,27 @@ function ui(){
 depthEl.addEventListener('input',ui);
 btnDir.onclick=()=>{dir=-dir;btnDir.setAttribute('aria-pressed',String(dir<0));};
 btnSpin.onclick=()=>{spinOn=!spinOn;ctl3.autoRotate=spinOn&&view==='3d';btnSpin.setAttribute('aria-pressed',String(spinOn));};
-$('scramble').onclick=()=>startRunner('scramble');
-$('unscramble').onclick=()=>startRunner('unscramble');
-$('reset').onclick=()=>{finishAnim();runner=null;cur.color.set(cur.face);log=[];writeColors(cur);ui();};
-function setView(v){view=v;finishAnim();$('v3d').setAttribute('aria-pressed',String(v==='3d'));$('vnet').setAttribute('aria-pressed',String(v==='net'));
-  ctl3.enabled=v==='3d';ctlN.enabled=v==='net';ctl3.autoRotate=v==='3d'&&spinOn;$('faceOn').disabled=v!=='3d';
-  $('hint').textContent=v==='3d'?'Drag to orbit, pinch or scroll to zoom. Click any face to turn it; shift-click turns it back.':'All twelve faces laid flat. Drag to pan, pinch or scroll to zoom into a star, click a face to turn it.';}
-$('v3d').onclick=()=>setView('3d');$('vnet').onclick=()=>setView('net');
+$('scramble').onclick=()=>view==='pen'?pen.scramble():startRunner('scramble');
+$('unscramble').onclick=()=>view==='pen'?pen.unscramble():startRunner('unscramble');
+$('reset').onclick=()=>{if(view==='pen'){pen.reset();return;}finishAnim();runner=null;cur.color.set(cur.face);log=[];writeColors(cur);ui();};
+function setView(v){const was=view;view=v;finishAnim();$('vpen').setAttribute('aria-pressed',String(v==='pen'));$('v3d').setAttribute('aria-pressed',String(v==='3d'));$('vnet').setAttribute('aria-pressed',String(v==='net'));
+  ctl3.enabled=v!=='net';ctlN.enabled=v==='net';ctl3.autoRotate=v!=='net'&&spinOn;$('faceOn').disabled=v==='net';
+  pen.view(was,v);ui();
+  $('hint').textContent=v==='pen'?'Drag a sticker to slide its ring around the solid. Drag empty space to orbit; pinch or scroll to zoom.':v==='3d'?'Drag to orbit, pinch or scroll to zoom. Click any face to turn it; shift-click turns it back.':'All twelve faces laid flat. Drag to pan, pinch or scroll to zoom into a star, click a face to turn it.';}
+$('v3d').onclick=()=>setView('3d');$('vnet').onclick=()=>setView('net');$('vpen').onclick=()=>setView('pen');
 let fly=null;
-$('faceOn').onclick=()=>{const dv=cam3.position.clone().normalize();let best=null,bd=-2;
+$('faceOn').onclick=()=>{if(view==='pen'){pen.face();return;}const dv=cam3.position.clone().normalize();let best=null,bd=-2;
   FACES.forEach(F=>{const n=new THREE.Vector3(...F.n);const d=n.dot(dv);if(d>bd){bd=d;best=n;}});
   spinOn=false;ctl3.autoRotate=false;btnSpin.setAttribute('aria-pressed','false');
   fly={from:cam3.position.clone(),to:best.clone().multiplyScalar(Math.max(4.2,Math.min(cam3.position.length(),6.4))),t0:performance.now()};};
 
 /* ---------- loop ---------- */
 function frame(now){
+  pen.frame(now);
   if(anim){const x=(now-anim.t0)/anim.dur;if(x>=1)finishAnim();else setTurnPose(cur,anim.mv.j,anim.mv.k,anim.mv.dir*2*Math.PI/5*easeIO(x));}
   stepRunner();
   if(fly){const x=Math.min(1,(now-fly.t0)/800),e=easeIO(x);cam3.position.copy(fly.from).lerp(fly.to,e);if(x>=1)fly=null;}
-  if(view==='3d'){ctl3.update();draw(scene3,cam3);}else{ctlN.update();draw(sceneN,camN);}
+  if(view!=='net'){ctl3.update();draw(scene3,cam3);}else{ctlN.update();draw(sceneN,camN);}
   requestAnimationFrame(frame);}
 
 try{await Promise.race([document.fonts.ready,new Promise(r=>setTimeout(r,1500))]);}catch(e){}
@@ -737,7 +1002,8 @@ let savedStyle='glass';try{savedStyle=localStorage.getItem('megaminx-style')||'g
 applyStyle(savedStyle,false);
 await setOrder(151,{scramble:reduce?'instant':'none'});
 setView('3d');
-if(!reduce)setTimeout(()=>startRunner('scramble',170),500);
+if(pen.wantUrl)setTimeout(()=>setView('pen'),400);
+else if(!reduce)setTimeout(()=>startRunner('scramble',170),500);
 ui();
 requestAnimationFrame(frame);
 })();
